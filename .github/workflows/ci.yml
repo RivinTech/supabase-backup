@@ -20,8 +20,9 @@ jobs:
       - run: npm run check
       - run: npm run lint
       - run: npm run test:unit
+      # action-validator takes one file per run; the default shell's -e stops at the first failure.
       - name: Validate workflows
-        run: npx --yes @action-validator/cli@0.6.0 .github/workflows/*.yml
+        run: for f in .github/workflows/*.yml; do npx --yes @action-validator/cli@0.6.0 "$f"; done
       - name: List shipped files
         run: npm pack --dry-run
   # Proves the git install and its prepare build on Ubuntu before any project pins this commit.
