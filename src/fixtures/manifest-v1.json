@@ -1,0 +1,38 @@
+{
+	"formatVersion": 1,
+	"target": "production",
+	"ref": "abcdefghijklmnopqrst",
+	"createdAt": "2026-10-31T07:17:00.000Z",
+	"serverVersion": "17.6",
+	"pgDumpVersion": "17.6",
+	"gitCommit": "0123456789abcdef0123456789abcdef01234567",
+	"migrations": [
+		{
+			"version": "20261001000000",
+			"name": "app",
+			"hash": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+			"statements": ["create schema app", "create schema app_history"]
+		}
+	],
+	"tables": [
+		{ "name": "app.note", "rows": 2, "hash": "d41d8cd98f00b204e9800998ecf8427e" },
+		{ "name": "app_history.change", "rows": 0, "hash": "d41d8cd98f00b204e9800998ecf8427e" }
+	],
+	"sequences": ["app.note_id_seq"],
+	"auth": {
+		"users": { "rows": 1, "columns": ["id", "email"] },
+		"identities": { "rows": 1, "columns": ["id", "user_id"] }
+	},
+	"policies": 3,
+	"rlsDisabledTables": [],
+	"files": {
+		"app.dump": {
+			"bytes": 2048,
+			"sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+		},
+		"auth.json": {
+			"bytes": 512,
+			"sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+		}
+	}
+}

@@ -1,0 +1,64 @@
+# Encrypted backup of a Supabase database to R2, called from a project's own workflow (README > Setup). It runs in
+# the caller's repo, so the secrets and variables come from the caller's backup-<target> environment.
+name: backup
+on:
+  workflow_call:
+    inputs:
+      target:
+        description: production or dev
+        type: string
+        required: true
+      working-directory:
+        description: The project's supabase folder, which holds supabase-backup.json and the package-lock.json
+        type: string
+        default: supabase
+permissions:
+  contents: read
+jobs:
+  backup:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    environment: backup-${{ inputs.target }}
+    defaults:
+      run:
+        working-directory: ${{ inputs.working-directory }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: ${{ inputs.working-directory }}/package-lock.json
+      - name: Install PostgreSQL 17 client and age
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-common age
+          sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y
+          sudo apt-get install -y postgresql-client-17
+      - id: install
+        run: npm ci
+      # Logs which npm ran: npm 11's allow-git setting defaults to all, which installing this package from git needs.
+      # A future npm that changes that fails npm ci above; this line says which npm it was.
+      - run: npm --version
+      # The local bin, never npx: npx would fetch an unrelated registry package of the same name if this one is missing.
+      - id: backup
+        name: Back up
+        run: ./node_modules/.bin/supabase-backup backup
+        env:
+          BACKUP_TARGET: ${{ inputs.target }}
+          BACKUP_DB_URL: ${{ secrets.BACKUP_DB_URL }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: auto
+          AWS_REQUEST_CHECKSUM_CALCULATION: when_required
+          AWS_RESPONSE_CHECKSUM_VALIDATION: when_required
+          R2_ENDPOINT: ${{ vars.R2_ENDPOINT }}
+          R2_BUCKET: ${{ vars.R2_BUCKET }}
+      # After the backup, so a half-done pin bump fails the run without costing that night's archive.
+      - name: Verify pins
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        run: ./node_modules/.bin/supabase-backup verify-pins --lockfile package-lock.json

@@ -1,0 +1,50 @@
+{
+	"name": "supabase-backup",
+	"version": "1.0.0",
+	"type": "module",
+	"description": "Encrypted off-site backups, restore, and a dev test runner for Supabase projects.",
+	"engines": {
+		"node": ">=24"
+	},
+	"bin": {
+		"supabase-backup": "dist/cli.js"
+	},
+	"exports": {
+		"./scram": {
+			"types": "./dist/scram.d.ts",
+			"default": "./dist/scram.js"
+		}
+	},
+	"license": "UNLICENSED",
+	"private": true,
+	"files": [
+		"dist",
+		"certs",
+		"tests",
+		"README.md"
+	],
+	"scripts": {
+		"prepare": "tsc -p tsconfig.build.json",
+		"check": "tsc --noEmit",
+		"lint": "prettier --check .",
+		"format": "prettier --write .",
+		"test:unit": "node --test \"src/**/*.test.ts\""
+	},
+	"dependencies": {
+		"pg": "8.23.1"
+	},
+	"peerDependencies": {
+		"supabase": ">=2.120.0 <3"
+	},
+	"peerDependenciesMeta": {
+		"supabase": {
+			"optional": true
+		}
+	},
+	"devDependencies": {
+		"@types/node": "^24",
+		"@types/pg": "8.23.1",
+		"prettier": "^3.8.3",
+		"typescript": "^6.0.3"
+	}
+}

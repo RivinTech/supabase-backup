@@ -1,0 +1,42 @@
+name: ci
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run check
+      - run: npm run lint
+      - run: npm run test:unit
+      - name: Validate workflows
+        run: npx --yes @action-validator/cli@0.6.0 .github/workflows/*.yml
+      - name: List shipped files
+        run: npm pack --dry-run
+  # Proves the git install and its prepare build on Ubuntu before any project pins this commit.
+  install:
+    if: ${{ github.event_name == 'push' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+      - name: Install from GitHub and run
+        working-directory: ${{ runner.temp }}
+        run: |
+          mkdir install-check && cd install-check
+          npm init -y
+          npm install "github:${{ github.repository }}#${{ github.sha }}"
+          ./node_modules/.bin/supabase-backup --help

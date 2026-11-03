@@ -1,0 +1,45 @@
+# Fails (and GitHub emails the cron author) when the production backups in R2 are stale, too small, or missing a
+# monthly. Called from a project's own workflow (README > Setup); runs with the read-only R2 key in the caller's
+# backup-watchdog environment.
+name: watchdog
+on:
+  workflow_call:
+    inputs:
+      working-directory:
+        description: The project's supabase folder, which holds the package-lock.json
+        type: string
+        default: supabase
+permissions:
+  contents: read
+jobs:
+  watchdog:
+    runs-on: ubuntu-24.04
+    # At least 3x the run time recorded at cutover; raise it if runs grow.
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    environment: backup-watchdog
+    defaults:
+      run:
+        working-directory: ${{ inputs.working-directory }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: ${{ inputs.working-directory }}/package-lock.json
+      - run: npm ci
+      # The local bin, never npx: npx would fetch an unrelated registry package of the same name if this one is missing.
+      - name: Check backups
+        run: ./node_modules/.bin/supabase-backup watchdog
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: auto
+          AWS_REQUEST_CHECKSUM_CALCULATION: when_required
+          AWS_RESPONSE_CHECKSUM_VALIDATION: when_required
+          R2_ENDPOINT: ${{ vars.R2_ENDPOINT }}
+          R2_BUCKET: ${{ vars.R2_BUCKET }}

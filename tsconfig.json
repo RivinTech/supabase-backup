@@ -1,0 +1,18 @@
+{
+	// Node 24 runs the .ts sources directly for tests and checks; tsconfig.build.json compiles dist/ at install
+	// (npm runs prepare for a git dependency), because Node won't strip types under node_modules.
+	"compilerOptions": {
+		"target": "es2024",
+		"module": "nodenext",
+		"moduleResolution": "nodenext",
+		"types": ["node"],
+		"strict": true,
+		"noEmit": true,
+		"allowImportingTsExtensions": true,
+		"erasableSyntaxOnly": true,
+		"verbatimModuleSyntax": true,
+		"noUncheckedIndexedAccess": true,
+		"skipLibCheck": true
+	},
+	"include": ["src"]
+}
