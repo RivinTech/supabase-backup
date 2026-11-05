@@ -492,6 +492,16 @@ test("watchdog: this month's monthly is required from its first daily, or from t
 		monthlyMissing('2026-10')
 	]);
 	assert.equal(monthlyMissing('2026-10'), 'monthly 2026-10 missing');
+	// A run that started before midnight wrote September's monthly, though its daily landed in October.
+	const lateSeptember = [
+		...september,
+		object(
+			'production/daily/2026-09-30T23-58-00Z.tar.age',
+			new Date('2026-10-01T00:04:00Z'),
+			'late'
+		)
+	];
+	assert.deepEqual(watchdogFailures(lateSeptember, new Date('2026-10-01T13:43:00Z')), []);
 	const day3 = new Date('2026-10-03T13:43:00Z');
 	assert.deepEqual(watchdogFailures(september, day3), [
 		dailyTooOld('78.4'),
@@ -506,6 +516,10 @@ test("watchdog: last month's monthly is required once backups predate this month
 	assert.deepEqual(watchdogFailures(noSeptemberMonthly, NOW), [monthlyMissing('2026-09')]);
 	const firstMonth = healthy().filter((o) => o.key.includes('2026-10'));
 	assert.deepEqual(watchdogFailures(firstMonth, NOW), []);
+	// A September-keyed daily uploaded after midnight still predates October, by key.
+	const lateUpload = { ...firstMonth[0]!, key: 'production/daily/2026-09-30T23-58-00Z.tar.age' };
+	lateUpload.lastModified = new Date('2026-10-01T00:04:00Z');
+	assert.deepEqual(watchdogFailures([...firstMonth, lateUpload], NOW), [monthlyMissing('2026-09')]);
 });
 
 test("watchdog: a monthly must match a daily from its month, while that month's dailies are kept", () => {

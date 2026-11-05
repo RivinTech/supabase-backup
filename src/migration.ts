@@ -42,6 +42,9 @@ revoke execute on function backup.auth_rows() from public, anon, authenticated, 
 grant execute on function backup.auth_rows() to backup_reader;
 `;
 
+// auth_rows' bare aliases (u, i) would resolve to a column of that name if Supabase ever added one; both uses then
+// fail loudly (jsonb_each of a scalar, an identity without an id) rather than back up the wrong thing. Not changed to
+// `.*`: any change to the generated SQL makes every project regenerate and push its migration.
 export const UNBACKED_COUNTS_SQL = `-- The backup doesn't cover storage or Vault. They hold no rows today; it fails if they ever do, so that isn't missed.
 create or replace function backup.unbacked_counts()
 returns table (rel text, row_count bigint)

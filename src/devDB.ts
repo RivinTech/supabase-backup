@@ -102,6 +102,9 @@ async function pendingMigrations(client: pg.Client): Promise<string[]> {
 /**
  * Runs `body` in one transaction after applying `pending`, and always rolls back.
  * Returns the milliseconds `body` took.
+ *
+ * A migration that ends the transaction itself (`commit;`) would escape the rollback. Migrations are applied with
+ * `supabase db push`, which wraps each file in its own transaction, so none of ours do; one that did would fail review.
  */
 async function inRolledBackTransaction<T>(
 	client: pg.Client,
@@ -115,7 +118,9 @@ async function inRolledBackTransaction<T>(
 		const result = await body();
 		return { result, ms: Math.round(performance.now() - start) };
 	} finally {
-		await client.query('rollback');
+		// Don't let a failed rollback hide the error that got here: an aborted or broken connection rolls back anyway
+		// once the caller closes it.
+		await client.query('rollback').catch(() => undefined);
 	}
 }
 

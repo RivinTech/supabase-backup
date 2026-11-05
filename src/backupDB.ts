@@ -97,14 +97,20 @@ const quoted = (name: string) => name.split('.').map(quoteIdent).join('.');
 async function tableStates(client: pg.Client, schemas: string[]): Promise<TableState[]> {
 	const states: TableState[] = [];
 	for (const name of await relationNames(client, schemas, 'r')) {
-		const { rows } = await client.query<{ rows: string; hash: string }>(
-			`select count(*) as rows, md5(coalesce(string_agg(h, '' order by h collate "C"), '')) as hash
-			 from (select md5(t::text) as h from ${quoted(name)} t) d`
-		);
+		const { rows } = await client.query<{ rows: string; hash: string }>(tableHashQuery(name));
 		states.push({ name, rows: Number(rows[0]!.rows), hash: rows[0]!.hash });
 	}
 	return states;
 }
+
+/**
+ * One table's row count and content hash. `row(t.*)`, not `t`: a column named `t` would win over the alias, and the
+ * hash would cover only that column. Both give the same text otherwise, so a manifest written before this form
+ * verifies unless a table has a column named `t`.
+ */
+export const tableHashQuery = (name: string) =>
+	`select count(*) as rows, md5(coalesce(string_agg(h, '' order by h collate "C"), '')) as hash ` +
+	`from (select md5(row(t.*)::text) as h from ${quoted(name)} t) d`;
 
 /** Tables, policies, and RLS state; the caller adds the auth row counts, which it reads its own way. */
 export async function readDatabaseState(

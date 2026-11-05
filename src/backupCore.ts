@@ -651,6 +651,9 @@ export const monthlyMissing = (month: string) => `monthly ${month} missing`;
 export const monthlyUnmatched = (month: string) =>
 	`monthly ${month} matches no daily from that month`;
 
+/** The `YYYY-MM` a backup's key names: the month its run chose, which can differ from its upload time's. */
+const keyMonth = (key: string) => /^production\/(?:daily|monthly)\/(\d{4}-\d{2})/.exec(key)?.[1];
+
 const isDaily = (o: R2Object) =>
 	o.key.startsWith('production/daily/') && o.key.endsWith('.tar.age');
 
@@ -688,17 +691,21 @@ export function watchdogFailures(objects: R2Object[], now: Date): string[] {
 			.filter((entry): entry is readonly [string, R2Object] => entry[0] !== undefined)
 	);
 	// The copy step runs with the month's first daily; the 3rd allows the same two missed nights as the dailies.
-	const dailyThisMonth = dailies.some((d) => d.lastModified >= monthStart);
+	// By key, as the backup chose the monthly: a run that starts before midnight and uploads after it wrote last month's.
+	const dailyThisMonth = dailies.some((d) => d.key.startsWith(`production/daily/${thisMonth}`));
 	if (!monthlies.has(thisMonth) && (dailyThisMonth || now.getUTCDate() >= 3)) {
 		failures.push(monthlyMissing(thisMonth));
 	}
-	// Only once backups predate this month, so the first month of rollout isn't flagged.
-	if (!monthlies.has(lastMonth) && backups.some((o) => o.lastModified < monthStart)) {
+	// Only once backups predate this month, so the first month of rollout isn't flagged. By key, like the check above.
+	if (
+		!monthlies.has(lastMonth) &&
+		backups.some((o) => (keyMonth(o.key) ?? thisMonth) < thisMonth)
+	) {
 		failures.push(monthlyMissing(lastMonth));
 	}
 	// A monthly is a byte copy of the daily its run wrote just before it, so it's checked while some same-month daily
 	// from no later than the monthly is kept. Once its source expires (36 days) only later dailies remain, and those
-	// never match.
+	// never match. Upload times here, not keys: the question is which object was written first, not which month.
 	for (const [month, monthly] of [...monthlies].sort(([a], [b]) => (a < b ? -1 : 1))) {
 		const sameMonth = dailies.filter((d) => d.key.startsWith(`production/daily/${month}`));
 		const sourceKept = sameMonth.some((d) => d.lastModified <= monthly.lastModified);

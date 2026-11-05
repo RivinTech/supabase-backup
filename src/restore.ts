@@ -283,7 +283,8 @@ async function verify(
 	const authDiffs: string[] = [];
 	for (const table of AUTH_TABLES) {
 		const { rows } = await client.query<{ row: string }>(
-			`select to_jsonb(t)::text as row from auth.${table} t`
+			// t.*, not t: a column named t would win over the alias.
+			`select to_jsonb(t.*)::text as row from auth.${table} t`
 		);
 		authRows[table] = rows.map((r) => parseLosslessJSON(r.row) as Record<string, unknown>);
 		const ids = authContentDiff(archive[table], authRows[table], plans[table]);

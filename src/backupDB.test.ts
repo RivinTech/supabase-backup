@@ -1,7 +1,13 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { pgDumpArgs } from './backup.ts';
-import { checkSchemaList, missingSchemasFunction, schemasError } from './backupDB.ts';
+import type pg from 'pg';
+import { checkCoverage, pgDumpArgs } from './backup.ts';
+import {
+	checkSchemaList,
+	missingSchemasFunction,
+	schemasError,
+	tableHashQuery
+} from './backupDB.ts';
 
 const pgError = (code: string) => Object.assign(new Error(`pg ${code}`), { code });
 
@@ -27,6 +33,43 @@ test('checkSchemaList sorts a non-empty list of plain, unreserved names', () => 
 		/backup\.schemas\(\): .*public is reserved/
 	);
 	assert.throws(() => checkSchemaList(['App']), /isn't a plain lowercase/);
+});
+
+/**
+ * A client whose queries return a clean database, except `missing` from the missing-schema query. The query itself is
+ * SQL, checked against a real database; this pins that its parameter is the list and its rows fail the guard.
+ */
+function coverageClient(missing: string[]) {
+	const params: unknown[][] = [];
+	const client = {
+		query: async (sql: string, values?: unknown[]) => {
+			if (sql.includes('unnest(')) {
+				params.push(values ?? []);
+				return { rows: missing.map((name) => ({ name })) };
+			}
+			if (sql.includes('pg_largeobject_metadata')) return { rows: [{ count: '0' }] };
+			return { rows: [] };
+		}
+	};
+	return { client: client as unknown as pg.Client, params };
+}
+
+test('checkCoverage fails on a listed schema that is missing or not owned by postgres', async () => {
+	const clean = coverageClient([]);
+	await checkCoverage(clean.client, ['app', 'history']);
+	assert.deepEqual(clean.params, [[['app', 'history']]]);
+
+	const { client } = coverageClient(['history']);
+	await assert.rejects(
+		checkCoverage(client, ['app', 'history']),
+		/^Error: schema guard: backup\.schemas\(\) lists history, which doesn't exist or isn't owned by postgres$/
+	);
+});
+
+test('tableHashQuery hashes whole rows, so a column named t cannot stand in for the row', () => {
+	const sql = tableHashQuery('app.note');
+	assert.match(sql, /md5\(row\(t\.\*\)::text\) as h from "app"\."note" t\)/);
+	assert.doesNotMatch(sql, /md5\(t::text\)/);
 });
 
 test('pgDumpArgs dumps exactly the listed schemas, strictly, from the snapshot', () => {

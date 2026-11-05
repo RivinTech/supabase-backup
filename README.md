@@ -66,6 +66,10 @@ says otherwise.
    npm install -D supabase@2.120.0
    ```
 
+   If the folder has no `package.json` yet, run `npm init -y` and then `npm pkg set name=<project>-supabase` first:
+   `npm init -y` names the package after the folder, and npm refuses to install `supabase` into a package named
+   `supabase` (ENOSELF).
+
    npm may record the package in `package-lock.json` as `git+ssh://git@github.com/...`. That's harmless: it's the
    same commit, and `verify-pins` accepts both forms.
 
@@ -262,6 +266,7 @@ concurrency:
 jobs:
   backup:
     uses: RivinTech/supabase-backup/.github/workflows/backup.yml@<sha>
+    secrets: inherit # the called job reads its environment's secrets only if they're passed
     with:
       target: ${{ inputs.target || 'production' }}
 ```
@@ -278,7 +283,15 @@ permissions:
 jobs:
   watchdog:
     uses: RivinTech/supabase-backup/.github/workflows/watchdog.yml@<sha>
+    secrets: inherit
 ```
+
+A workflow called from another repo sees none of the caller's secrets, environment secrets included, unless the
+caller passes them. Without `secrets: inherit` the backup fails with "no backup URL: set secret BACKUP_DB_URL in
+environment backup-…". `inherit` hands the workflows every secret the caller can see, repo and organization secrets
+included, and the pinned SHA fixes the code that receives them. Keep `BACKUP_*` and `R2_*` secrets in the
+`backup-*` environments only: a repo or organization secret of the same name fills in wherever an environment lacks
+one, so a job could quietly run with the wrong key.
 
 Then run `npm run verify-pins`; it must print that the pins match.
 
@@ -318,58 +331,68 @@ allow `RivinTech/supabase-backup/.github/workflows/*@*`.
 Restores go into a **new, empty project** only. Expect about an hour, most of it manual; the restore itself takes
 seconds to minutes.
 
-1. **Tools.** Install Git, Node 24 (https://nodejs.org/en/download), age, and the PostgreSQL 17 client, then clone
-   your project's repo and run `npm ci` in its `supabase/` folder.
+1. **Tools.** Install Git, Node 24 or later, age, and the PostgreSQL 17 client, then clone your project's repo and
+   run `npm ci` in its `supabase/` folder. If GitHub or this package's repo is unavailable, `npm ci` can't fetch
+   them: see [Without GitHub](#without-github) instead.
 
    **Windows (PowerShell):**
 
    ```powershell
    winget install --id Git.Git -e
+   winget install --id OpenJS.NodeJS.LTS -e
    winget install --id FiloSottile.age -e
    winget install --id PostgreSQL.PostgreSQL.17 -e --override "--mode unattended --disable-components server,pgAdmin,stackbuilder"
    ```
 
-   Open a new terminal; `age --version` must run and
+   Open a new terminal; `node --version` must print v24 or later, `age --version` must run, and
    `& 'C:\Program Files\PostgreSQL\17\bin\psql.exe' --version` must print 17.
 
-   **macOS:** `brew install git age postgresql@17`, then `export PG_BIN="$(brew --prefix postgresql@17)/bin"`.
-   **Linux (Debian/Ubuntu):** `sudo apt-get install git age postgresql-client-17` (from the PGDG apt repo if your
-   release lacks 17). The restore needs client 17.6 or later. If the tools aren't in a standard location, set
-   `PG_BIN` to the folder holding `psql` and `pg_restore`.
-
-   If GitHub or this package's repo is unavailable, see [Without GitHub](#without-github) below.
+   **macOS:** `brew install git node age postgresql@17`, then `export PG_BIN="$(brew --prefix postgresql@17)/bin"`.
+   **Linux (Debian/Ubuntu):** `sudo apt-get install git age postgresql-client-17` (if your release lacks 17, first add
+   the PGDG apt repo: https://wiki.postgresql.org/wiki/Apt), and Node from https://nodejs.org/en/download (its page
+   gives the commands for your system). The restore needs client 17.6 or later. On Windows it finds the winget install
+   above by itself; elsewhere, or for another install folder, set `PG_BIN` to the folder holding `psql` and
+   `pg_restore`.
 
 2. **New project** in the Supabase dashboard. On a Free org with 2 active projects, pause one first (Project
    Settings > General > Pause project).
    - a name such as `<project>-restored`, your region, any plan;
    - a strong database password of **letters and digits only**, so the URL needs no encoding;
-   - the Postgres major version of the backup (the restore refuses any other);
+   - the Postgres major version of the backup, 17 unless your project has moved since: the restore refuses any
+     other and names the one it needs;
    - the same **Data API** and **automatic RLS** choices as the original project.
 
    When it's ready: **Database > Settings > Enforce SSL**: on.
 
-3. **`supabase/.env`.** Create it if it's missing. Click **Connect**, choose **Session pooler**, copy the URI
-   (`postgresql://postgres.<ref>:[YOUR-PASSWORD]@<host>:5432/postgres`), replace `[YOUR-PASSWORD]`, brackets
+3. **`supabase/.env`.** Create it if it's missing. `<new ref>` below is the new project's ref, the id in its
+   dashboard URL (`https://supabase.com/dashboard/project/<ref>`). Click **Connect**, choose **Session pooler**, copy
+   the URI (`postgresql://postgres.<ref>:[YOUR-PASSWORD]@<host>:5432/postgres`), replace `[YOUR-PASSWORD]`, brackets
    included, with the password, and add the line `RESTORE_DB_URL=<that URI>`.
 
 4. **Pick the object.**
    - Choose the newest object whose key **and SHA-256** appear in a green db-backup run's summary line (Actions >
      db-backup > the run > the **Back up** step's last line).
-   - Download it: Cloudflare dashboard > R2 Object Storage > your bucket > Objects > `production/` > `daily/` (or
-     `monthly/`) > the object > **Download**, into a new folder outside the repo (`<restore folder>` below).
+   - Make a new folder outside the repo, `<restore folder>` below: `New-Item -ItemType Directory <restore folder>`
+     (Windows) or `mkdir <restore folder>` (macOS/Linux), for example `$env:USERPROFILE\restore` or `~/restore`.
+   - Download the object into it: Cloudflare dashboard > R2 Object Storage > your bucket > Objects > `production/` >
+     `daily/` (or `monthly/`) > the object > **Download**. `<file>` below is its file name, `.tar.age` included.
    - Check its hash: `Get-FileHash -Algorithm SHA256 <restore folder>\<file>` (Windows) or
-     `shasum -a 256 <restore folder>/<file>` (macOS/Linux). It must match the summary.
+     `shasum -a 256 <restore folder>/<file>` (macOS/Linux). It must match the summary. A monthly is a byte copy of
+     the daily its run wrote just before it, so it matches that run's summary.
    - A monthly older than 90 days has no run log left. Use one only if the Actions history shows no unexplained red
      db-backup or watchdog run from its month.
-   - If GitHub itself is lost, accept an object only if all of these hold: it's under its prefix's lock rule, it was
-     uploaded a few minutes after 07:17 UTC, a monthly's ETag equals a daily's (while that daily exists), and the
-     restore's checks pass.
+   - If GitHub itself is lost, accept an object only if all of these hold: it's under its prefix's lock rule; a
+     daily was uploaded after the UTC timestamp in its name and within the backup job's 20-minute timeout of it, and
+     that timestamp is at or after 07:17 UTC (scheduled runs often start hours late) unless it's a manual run you can
+     account for; a monthly's ETag equals a daily's (while that daily exists); and the restore's checks pass.
 
    Don't restore an object you can't match.
 
 5. **Key file.** Copy the `AGE-SECRET-KEY-1…` line from the password manager, then:
    - **Windows:** `Get-Clipboard | Set-Content -Encoding ascii <restore folder>\key.txt`, then Win+V > **Clear all**;
-   - **macOS:** `pbpaste > <restore folder>/key.txt`, then copy something harmless.
+   - **macOS:** `pbpaste > <restore folder>/key.txt`, then copy something harmless;
+   - **Linux:** `xclip -o -selection clipboard > <restore folder>/key.txt` (or `wl-paste > …` on Wayland), then copy
+     something harmless.
 
    From paper, type the line into a text editor and save it as that file. Any encoding or line ending works; if the
    restore says the file "must contain one AGE-SECRET-KEY-1… line", part of the key is missing.
@@ -377,7 +400,7 @@ seconds to minutes.
 6. **Restore**, in `supabase/`:
 
    ```
-   npm run restore -- --backup <restore folder>/<file>.tar.age --identity <restore folder>/key.txt --target-ref <new ref>
+   npm run restore -- --backup <restore folder>/<file> --identity <restore folder>/key.txt --target-ref <new ref>
    ```
 
    It decrypts and checks the archive, checks the target is new and empty, applies the backup's own migrations from
@@ -394,8 +417,9 @@ seconds to minutes.
 7. **Clean up:** delete `<restore folder>` (it holds the key) and the `RESTORE_DB_URL` line.
 
 8. **Post-restore:**
-   - Edit `supabase-backup.json`: set `production.ref` (and `name`) to the new project. Land it on `main` through a
-     reviewed commit before step 10; the password command and the backup refuse any other ref.
+   - Edit `supabase-backup.json`: set `projects.production.ref` (and `projects.production.name`) to the new
+     project. Land it on `main` through a reviewed commit before step 10; the password command and the backup refuse
+     any other ref.
    - Set role passwords: `npm run backup:password -- --ref <new ref> --host <its session pooler host>` (paste into
      `backup-production` > `BACKUP_DB_URL`; run the printed `alter role` in the new project's SQL Editor), and the
      same for any other login roles your project has.
@@ -419,20 +443,22 @@ seconds to minutes.
 The restore needs no GitHub, but it needs two things under `supabase/node_modules`: this package, built, and the
 supabase CLI, which `db push` runs. The CLI's npm package downloads its binary from GitHub at install time, so with
 GitHub down a fresh `npm install` can't get it. Any machine that ran `npm ci` in your project has both: restore from
-there, or copy its `supabase/node_modules` folder to the restoring machine.
+there, or copy its `supabase/node_modules` folder to a restoring machine with the same OS and CPU architecture (the
+CLI's binary is built for one).
 
 If only this package is missing, from any clone of this repo (a teammate's, or a backup of it):
 
 ```
-git checkout <pinned sha>
+git checkout <pinned sha>   # the #<sha> in your project's supabase/package-lock.json
 npm ci
 npm pack
 ```
 
-`npm ci` builds it, and `npm pack` prints `supabase-backup-1.0.0.tgz`. In a folder named `supabase` that holds your
-project's `supabase-backup.json`, `migrations/`, and `.env`, run `npm install <path to the .tgz>`. Don't use
-`npm install <path to the clone>`: it only links the folder and skips the package's dependencies, so the command
-fails on `pg`.
+`npm ci` builds it, and `npm pack` prints the tarball's name (such as `supabase-backup-1.0.0.tgz`). In your project's
+`supabase/` folder, the one whose `node_modules` has the CLI, run `npm install --no-save <path to the .tgz>`, then
+restore as in step 6. The restore needs that folder's `supabase-backup.json`, `config.toml`, `migrations/`, and `.env`
+(step 3). Don't use `npm install <path to the clone>`: it only links the folder and skips the package's dependencies,
+so the command fails on `pg`.
 
 ## Yearly restore drill
 
@@ -463,12 +489,15 @@ long as backups encrypted to it exist. Monthlies are kept forever, so keep every
 2. `npm run push:dev`, then `npm test`.
 3. Push to production with your usual procedure, then run a dev and a production backup.
 
-A schema removed from the list loses `backup_reader`'s grants. Restores of older backups still work: each backup
-records its own schema list.
+A schema removed from the list loses `backup_reader`'s grants. Remove one only when its data is no longer needed, and
+drop it in the same release (its data then lives only in older backups): while `postgres` still owns it, the
+nightly's coverage check and `npm test` both fail, since every `postgres`-owned schema must be listed. Restores of
+older backups still work: each backup records its own schema list.
 
 ## Updating the package
 
-**Review first.** This code runs with `BYPASSRLS` credentials and the R2 write key.
+**Review first.** This code runs with `BYPASSRLS` credentials and the R2 write key, and its workflows receive every
+secret the caller can see (`secrets: inherit`), so read the workflow changes as closely as the code.
 
 1. Read `https://github.com/RivinTech/supabase-backup/compare/<old sha>...<new sha>`.
 2. In a clone of this repo, prove the new commit is on `main`:

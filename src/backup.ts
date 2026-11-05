@@ -74,8 +74,10 @@ const { steps, step } = stepTimer();
  * no guard: losing it means users sign in and enroll again, not lost records. Storage and Vault are guarded because
  * their rows would be records. If SSO or pg_cron is ever turned on, its tables need a row in `backup.unbacked_counts`.
  */
-async function checkCoverage(client: pg.Client, backedUp: string[]): Promise<void> {
+export async function checkCoverage(client: pg.Client, backedUp: string[]): Promise<void> {
 	const problems: string[] = [];
+	// postgres only: migrations run as postgres, and Supabase's own schemas belong to its other roles, whose list it
+	// changes. A schema made for another role is a deliberate choice this guard doesn't second-guess.
 	// Not RESERVED_SCHEMAS: these are the postgres-owned schemas the guard checks below, relation by relation.
 	const { rows: schemas } = await client.query<{ name: string }>(
 		`select nspname as name from pg_catalog.pg_namespace
