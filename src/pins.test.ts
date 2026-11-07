@@ -73,6 +73,11 @@ test('pinProblems passes only when every pin names one repo at one full SHA', ()
 		pinProblems([workflow('main')], [lock('github:RivinTech/supabase-backup#main')]).join(),
 		/full 40-character/
 	);
+	const short = SHA.slice(0, 7);
+	assert.match(
+		pinProblems([workflow(short)], [lock(`github:RivinTech/supabase-backup#${short}`)]).join(),
+		/full 40-character/
+	);
 	assert.match(pinProblems([workflow(SHA, 'someone')], [good]).join(), /different repos/);
 	assert.match(pinProblems([workflow(OTHER)], [good]).join(), /the pins differ/);
 });

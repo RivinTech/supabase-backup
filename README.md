@@ -49,7 +49,8 @@ passwords. With this package, your bucket holds the only long-term copy.
 **Requirements:**
 
 - Postgres 17 (the privilege checks use `MAINTAIN`, and the backup runs `pg_dump` 17, which can't dump a newer server);
-- the project's migrations in `<repo>/supabase/migrations`, applied with the Supabase CLI;
+- the project's migrations in `<repo>/supabase/migrations`, applied with the Supabase CLI, and the
+  `supabase/config.toml` that `supabase init` creates (the restore refuses to run without it);
 - a GitHub repo with **environments** (a repo-secrets-only layout isn't supported);
 - a Cloudflare account for R2.
 
@@ -66,7 +67,8 @@ says otherwise.
    npm install -D supabase@2.120.0
    ```
 
-   If the folder has no `package.json` yet, run `npm init -y` and then `npm pkg set name=<project>-supabase` first:
+   If the folder has no `package.json` yet, run `npm init -y` and then `npm pkg set name=<project>-supabase` first,
+   where `<project>` is a short name for your project:
    `npm init -y` names the package after the folder, and npm refuses to install `supabase` into a package named
    `supabase` (ENOSELF).
 
@@ -89,7 +91,8 @@ says otherwise.
    refuses to download anything.
 
 The dev commands (`push`, `test`, `perf`) read `DEV_DB_URL` from `supabase/.env`: the dev project's session pooler
-URI, as `postgres`. They refuse any URL that isn't the configured dev project.
+URI, as `postgres`. They refuse any URL that isn't the configured dev project. Keep `.env` out of git: check that
+`.gitignore` covers it before you create it.
 
 ## Configure
 
@@ -143,6 +146,9 @@ another role, say) fails it.
 ## Setup
 
 Once per project. Replace `<project>` with a short name for your project.
+
+Write down, in your project's docs, what a restore can't bring back: the **Data API** and **automatic RLS** choices,
+and the **Authentication** settings. If the project is deleted, they can't be read back from it.
 
 ### 1. Cloudflare R2
 
@@ -331,7 +337,7 @@ allow `RivinTech/supabase-backup/.github/workflows/*@*`.
 Restores go into a **new, empty project** only. Expect about an hour, most of it manual; the restore itself takes
 seconds to minutes.
 
-1. **Tools.** Install Git, Node 24 or later, age, and the PostgreSQL 17 client, then clone your project's repo and
+1. **Tools.** Install Git, Node 24 or later, age, and the PostgreSQL 17 client, then clone your project's repo (`main`) and
    run `npm ci` in its `supabase/` folder. If GitHub or this package's repo is unavailable, `npm ci` can't fetch
    them: see [Without GitHub](#without-github) instead.
 
@@ -345,7 +351,7 @@ seconds to minutes.
    ```
 
    Open a new terminal; `node --version` must print v24 or later, `age --version` must run, and
-   `& 'C:\Program Files\PostgreSQL\17\bin\psql.exe' --version` must print 17.
+   `& 'C:\Program Files\PostgreSQL\17\bin\psql.exe' --version` must print 17.6 or later.
 
    **macOS:** `brew install git node age postgresql@17`, then `export PG_BIN="$(brew --prefix postgresql@17)/bin"`.
    **Linux (Debian/Ubuntu):** `sudo apt-get install git age postgresql-client-17` (if your release lacks 17, first add
@@ -357,7 +363,8 @@ seconds to minutes.
 2. **New project** in the Supabase dashboard. On a Free org with 2 active projects, pause one first (Project
    Settings > General > Pause project).
    - a name such as `<project>-restored`, your region, any plan;
-   - a strong database password of **letters and digits only**, so the URL needs no encoding;
+   - a strong database password of **letters and digits only**, so the URL needs no encoding, saved in your
+     password manager (step 7 deletes the only other copy);
    - the Postgres major version of the backup, 17 unless your project has moved since: the restore refuses any
      other and names the one it needs;
    - the same **Data API** and **automatic RLS** choices as the original project.
@@ -375,18 +382,19 @@ seconds to minutes.
    - Make a new folder outside the repo, `<restore folder>` below: `New-Item -ItemType Directory <restore folder>`
      (Windows) or `mkdir <restore folder>` (macOS/Linux), for example `$env:USERPROFILE\restore` or `~/restore`.
    - Download the object into it: Cloudflare dashboard > R2 Object Storage > your bucket > Objects > `production/` >
-     `daily/` (or `monthly/`) > the object > **Download**. `<file>` below is its file name, `.tar.age` included.
+     `daily/` (or `monthly/`) > the object > **Download**. The dashboard may add the object's prefix to the saved name
+     (`dev_2026-…tar.age`). `<file>` below is the name it saved, `.tar.age` included.
    - Check its hash: `Get-FileHash -Algorithm SHA256 <restore folder>\<file>` (Windows) or
      `shasum -a 256 <restore folder>/<file>` (macOS/Linux). It must match the summary. A monthly is a byte copy of
      the daily its run wrote just before it, so it matches that run's summary.
    - A monthly older than 90 days has no run log left. Use one only if the Actions history shows no unexplained red
      db-backup or watchdog run from its month.
-   - If GitHub itself is lost, accept an object only if all of these hold: it's under its prefix's lock rule; a
+   - If GitHub itself is lost, there's no summary to match. Accept an object only if all of these hold: it's under its prefix's lock rule; a
      daily was uploaded after the UTC timestamp in its name and within the backup job's 20-minute timeout of it, and
      that timestamp is at or after 07:17 UTC (scheduled runs often start hours late) unless it's a manual run you can
      account for; a monthly's ETag equals a daily's (while that daily exists); and the restore's checks pass.
 
-   Don't restore an object you can't match.
+   Otherwise, don't restore an object you can't match.
 
 5. **Key file.** Copy the `AGE-SECRET-KEY-1…` line from the password manager, then:
    - **Windows:** `Get-Clipboard | Set-Content -Encoding ascii <restore folder>\key.txt`, then Win+V > **Clear all**;

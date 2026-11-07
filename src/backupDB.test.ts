@@ -56,13 +56,13 @@ function coverageClient(missing: string[]) {
 
 test('checkCoverage fails on a listed schema that is missing or not owned by postgres', async () => {
 	const clean = coverageClient([]);
-	await checkCoverage(clean.client, ['app', 'history']);
-	assert.deepEqual(clean.params, [[['app', 'history']]]);
+	await checkCoverage(clean.client, ['app', 'zeta']);
+	assert.deepEqual(clean.params, [[['app', 'zeta']]]);
 
-	const { client } = coverageClient(['history']);
+	const { client } = coverageClient(['zeta']);
 	await assert.rejects(
-		checkCoverage(client, ['app', 'history']),
-		/^Error: schema guard: backup\.schemas\(\) lists history, which doesn't exist or isn't owned by postgres$/
+		checkCoverage(client, ['app', 'zeta']),
+		/^Error: schema guard: backup\.schemas\(\) lists zeta, which doesn't exist or isn't owned by postgres$/
 	);
 });
 
